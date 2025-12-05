@@ -8,6 +8,8 @@ import (
 
 	. "github.com/25smoking/Gwxapkg/internal/cmd"
 	. "github.com/25smoking/Gwxapkg/internal/config"
+	"github.com/25smoking/Gwxapkg/internal/key"
+	"github.com/25smoking/Gwxapkg/internal/reporter"
 	"github.com/25smoking/Gwxapkg/internal/restore"
 	"github.com/25smoking/Gwxapkg/internal/ui"
 )
@@ -35,6 +37,16 @@ func Execute(appID, input, outputDir, fileExt string, restoreDir bool, pretty bo
 	// 确定输出目录
 	if outputDir == "" {
 		outputDir = DetermineOutputDir(input, appID)
+	}
+
+	//  如果启用敏感信息扫描，初始化scanner
+	if sensitive {
+		if err := key.InitRules(); err != nil {
+			ui.Warning("初始化扫描规则失败: %v", err)
+			sensitive = false
+		} else {
+			key.InitCollector(appID)
+		}
 	}
 
 	// 显示步骤信息
@@ -71,4 +83,29 @@ func Execute(appID, input, outputDir, fileExt string, restoreDir bool, pretty bo
 	// 输出结果目录
 	fmt.Println()
 	ui.Success("输出目录: %s", filepath.Clean(outputDir))
+	
+	// 如果启用了敏感信息扫描，生成Excel报告
+	if sensitive {
+		collector := key.GetCollector()
+		if collector != nil {
+			collector.SetTotalFiles(len(inputFiles))
+			report := collector.GenerateReport()
+			
+			// 生成 Excel 报告
+			excelReporter := reporter.NewExcelReporter()
+			reportPath := filepath.Join(outputDir, "sensitive_report.xlsx")
+			if err := excelReporter.Generate(report, reportPath); err != nil {
+				ui.Warning("生成扫描报告失败: %v", err)
+			} else {
+				ui.Success("敏感信息报告: %s", reportPath)
+				ui.Info("   - 总匹配数: %d", report.Summary.TotalMatches)
+				ui.Info("   - 去重后: %d", report.Summary.UniqueMatches)
+				ui.Info("   - 高风险: %d | 中风险: %d | 低风险: %d", 
+					report.Summary.HighRisk, report.Summary.MediumRisk, report.Summary.LowRisk)
+			}
+			
+			// 清理收集器
+			key.ResetCollector()
+		}
+	}
 }

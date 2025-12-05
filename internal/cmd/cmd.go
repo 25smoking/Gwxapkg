@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"log"
@@ -177,7 +178,16 @@ func mergeDirs(srcDir, dstDir string) error {
 			}
 		}(dstFile)
 
-		_, err = io.Copy(dstFile, srcFile)
-		return err
+		// 使用缓冲读写提升copy性能
+		bufReader := bufio.NewReaderSize(srcFile, 256*1024)
+		bufWriter := bufio.NewWriterSize(dstFile, 256*1024)
+		
+		_, err = io.Copy(bufWriter, bufReader)
+		if err != nil {
+			return err
+		}
+		
+		// 确保所有数据写入
+		return bufWriter.Flush()
 	})
 }

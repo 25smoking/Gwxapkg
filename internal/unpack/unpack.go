@@ -1,16 +1,18 @@
 package unpack
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 
 	"github.com/25smoking/Gwxapkg/internal/key"
+	"github.com/25smoking/Gwxapkg/internal/scanner"
 
 	"github.com/25smoking/Gwxapkg/internal/config"
 
@@ -119,8 +121,15 @@ func UnpackWxapkg(data []byte, outputDir string) ([]string, error) {
 		return nil, fmt.Errorf("索引段长度不符: 读取到位置 %d, 预期结束位置 %d", currentPos, expectedIndexEnd)
 	}
 
-	// 控制并发数
-	const workerCount = 10
+	// 控制并发数 - 根据CPU核心动态设置
+	workerCount := runtime.NumCPU() * 2
+	if workerCount < 4 {
+		workerCount = 4 // 最少4个worker
+	}
+	if workerCount > 32 {
+		workerCount = 32 // 最多32个worker，避免过度并发
+	}
+	
 	var wg sync.WaitGroup
 	fileChan := make(chan WxapkgFile, workerCount)
 	errChan := make(chan error, workerCount)
@@ -184,18 +193,6 @@ func processFile(outputDir string, file WxapkgFile, reader io.ReaderAt, bufferPo
 		return fmt.Errorf("创建目录失败: %w", err)
 	}
 
-	// 创建文件
-	f, err := os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
-	if err != nil {
-		return fmt.Errorf("创建文件失败: %w", err)
-	}
-	defer func(f *os.File) {
-		err := f.Close()
-		if err != nil {
-			log.Printf("关闭文件 %s 失败: %v\n", file.Name, err)
-		}
-	}(f)
-
 	// 使用 io.NewSectionReader 创建一个只读取指定部分的 Reader
 	sectionReader := io.NewSectionReader(reader, int64(file.Offset), int64(file.Size))
 
@@ -220,18 +217,36 @@ func processFile(outputDir string, file WxapkgFile, reader io.ReaderAt, bufferPo
 		}
 	}
 
-	// 写入文件内容
-	if _, err := f.Write(content); err != nil {
+	// 写入文件内容（使用缓冲写入提升性能）
+	f, err := os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
+	if err != nil {
+		return fmt.Errorf("创建文件失败: %w", err)
+	}
+	defer f.Close()
+	
+	// 使用256KB缓冲区进行写入
+	bufWriter := bufio.NewWriterSize(f, 256*1024)
+	if _, err := bufWriter.Write(content); err != nil {
 		return fmt.Errorf("写入文件失败: %w", err)
 	}
+	
+	// 确保缓冲区内容全部写入
+	if err := bufWriter.Flush(); err != nil {
+		return fmt.Errorf("刷新缓冲区失败: %w", err)
+	}
 
+	// 敏感信息扫描
 	configManager := config.NewSharedConfigManager()
 	if sensitive, ok := configManager.Get("sensitive"); ok {
 		if p, o := sensitive.(bool); o {
 			if p {
-				// 查找敏感信息
-				if err := key.MatchRules(string(content)); err != nil {
-					return fmt.Errorf("%v", err)
+				// 使用新的扫描器
+				collector := key.GetCollector()
+				if collector != nil {
+					if err := scanner.ScanFile(fullPath, content, collector); err != nil {
+						// 扫描失败不影响文件保存
+						fmt.Printf("警告: 扫描文件 %s 失败: %v\n", fullPath, err)
+					}
 				}
 			}
 		}
