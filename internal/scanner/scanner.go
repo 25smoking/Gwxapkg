@@ -25,6 +25,10 @@ func ScanFile(filePath string, content []byte, collector *DataCollector) error {
 
 	// 按行扫描以获取行号
 	scanner := bufio.NewScanner(strings.NewReader(text))
+	// 设置更大的缓冲区以支持压缩后的超长行（默认 64KB，这里设置为 10MB）
+	const maxScanTokenSize = 10 * 1024 * 1024 // 10MB
+	buf := make([]byte, maxScanTokenSize)
+	scanner.Buffer(buf, maxScanTokenSize)
 	lineNumber := 1
 
 	for scanner.Scan() {
@@ -67,35 +71,35 @@ func ScanFile(filePath string, content []byte, collector *DataCollector) error {
 // getRuleName 获取规则中文名
 func getRuleName(ruleID string) string {
 	names := map[string]string{
-		"email":         "邮箱",
-		"phone_cn":      "手机号",
-		"id_card_cn":    "身份证",
-		"ipv4":          "IP地址",
-		"path":          "路径",
-		"url":           "URL",
-		"api_endpoint":  "API端点",
-		"domain":        "域名",
-		
-		"password_generic":    "密码",
-		"admin_password":      "管理员密码",
-		"root_password":       "Root密码",
-		
-		"api_key_generic":     "API密钥",
-		"aws_access_key_id":   "AWS访问密钥",
-		"aliyun_access_key":   "阿里云密钥",
-		"tencent_secret_id":   "腾讯云密钥",
-		"google_api_key":      "Google API密钥",
-		
-		"private_key_rsa":     "RSA私钥",
-		"private_key_dsa":     "DSA私钥",
-		"private_key_ec":      "EC私钥",
-		
-		"wechat_appid":        "微信AppID",
-		"wechat_secret":       "微信Secret",
-		
-		"jdbc_mysql":          "MySQL连接",
-		"mongodb_connection":  "MongoDB连接",
-		"redis_connection":    "Redis连接",
+		"email":        "邮箱",
+		"phone_cn":     "手机号",
+		"id_card_cn":   "身份证",
+		"ipv4":         "IP地址",
+		"path":         "路径",
+		"url":          "URL",
+		"api_endpoint": "API端点",
+		"domain":       "域名",
+
+		"password_generic": "密码",
+		"admin_password":   "管理员密码",
+		"root_password":    "Root密码",
+
+		"api_key_generic":   "API密钥",
+		"aws_access_key_id": "AWS访问密钥",
+		"aliyun_access_key": "阿里云密钥",
+		"tencent_secret_id": "腾讯云密钥",
+		"google_api_key":    "Google API密钥",
+
+		"private_key_rsa": "RSA私钥",
+		"private_key_dsa": "DSA私钥",
+		"private_key_ec":  "EC私钥",
+
+		"wechat_appid":  "微信AppID",
+		"wechat_secret": "微信Secret",
+
+		"jdbc_mysql":         "MySQL连接",
+		"mongodb_connection": "MongoDB连接",
+		"redis_connection":   "Redis连接",
 	}
 
 	if name, ok := names[ruleID]; ok {

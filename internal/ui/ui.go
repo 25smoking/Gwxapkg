@@ -29,7 +29,7 @@ func Banner() {
  ██║   ██║██║███╗██║ ██╔██╗ ██╔══██║██╔═══╝ ██╔═██╗ ██║   ██║
  ╚██████╔╝╚███╔███╔╝██╔╝ ██╗██║  ██║██║     ██║  ██╗╚██████╔╝
   ╚═════╝  ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝ ╚═════╝`)
-	dim.Println("              Wxapkg Decompiler Tool v2.5.0")
+	dim.Println("              Wxapkg Decompiler Tool v2.5.1")
 	fmt.Println()
 }
 

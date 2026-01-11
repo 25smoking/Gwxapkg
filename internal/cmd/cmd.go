@@ -58,6 +58,14 @@ func DetermineOutputDir(input, appID string) string {
 		return filepath.Join(baseDir, "result")
 	}
 
+	// 检查路径中是否已经包含 AppID 目录，避免重复嵌套
+	// 例如：输入路径为 .../wx123456/68/ 时，不需要再追加 wx123456
+	parentDir := filepath.Base(filepath.Dir(baseDir))
+	if parentDir == appID {
+		// 父目录已经是 AppID，直接使用 baseDir
+		return baseDir
+	}
+
 	return filepath.Join(baseDir, appID)
 }
 
@@ -181,12 +189,12 @@ func mergeDirs(srcDir, dstDir string) error {
 		// 使用缓冲读写提升copy性能
 		bufReader := bufio.NewReaderSize(srcFile, 256*1024)
 		bufWriter := bufio.NewWriterSize(dstFile, 256*1024)
-		
+
 		_, err = io.Copy(bufWriter, bufReader)
 		if err != nil {
 			return err
 		}
-		
+
 		// 确保所有数据写入
 		return bufWriter.Flush()
 	})
