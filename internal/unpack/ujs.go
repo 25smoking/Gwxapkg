@@ -54,14 +54,22 @@ func cleanDefineFunc(jsCode string) string {
 
 // extractDefineParams 提取所有 define 函数的第一个和第二个参数
 func extractDefineParams(jsCode string) ([]DefineParams, error) {
-	// 正则表达式提取 define 函数的第一个和第二个参数
+	// 正则表达式提取 define 函数的第一个和第二个参数 (严格匹配)
 	re := regexp.MustCompile(`define\s*\(\s*["']([^"']+)["']\s*,\s*function\s*\(([^)]*)\)\s*\{([\s\S]*?)\}\s*,\s*\{[^}]*isPage\s*:\s*[^}]*\}\s*\)\s*;`)
 	matches := re.FindAllStringSubmatch(jsCode, -1)
 
 	if len(matches) == 0 {
+		// 尝试使用 goja 运行 JavaScript
 		results, err := run(jsCode)
 		if err != nil {
-			return nil, err
+			// 如果 goja 失败 (例如 SyntaxError)，使用备选的宽松正则表达式
+			log.Printf("警告: goja 执行失败 (%v), 尝试使用正则表达式解析", err)
+			fallbackResults := extractDefineParamsFallback(jsCode)
+			if len(fallbackResults) > 0 {
+				return fallbackResults, nil
+			}
+			// 如果备选方案也失败，返回空结果而非错误
+			return []DefineParams{}, nil
 		}
 		return results, nil
 	}
@@ -79,12 +87,89 @@ func extractDefineParams(jsCode string) ([]DefineParams, error) {
 	return results, nil
 }
 
+// extractDefineParamsFallback 使用宽松的正则表达式作为备选方案
+func extractDefineParamsFallback(jsCode string) []DefineParams {
+	var results = make([]DefineParams, 0)
+
+	// 更宽松的正则表达式，匹配 define("path", function(...) {...})
+	re := regexp.MustCompile(`define\s*\(\s*["']([^"']+\.js)["']\s*,\s*function\s*\([^)]*\)\s*\{`)
+
+	// 查找所有 define 调用的起始位置
+	allMatches := re.FindAllStringSubmatchIndex(jsCode, -1)
+
+	for _, loc := range allMatches {
+		if len(loc) >= 4 {
+			moduleName := jsCode[loc[2]:loc[3]]
+			startIdx := loc[1] // define 函数体开始位置
+
+			// 使用括号匹配找到函数体结束位置
+			funcBody := extractFunctionBody(jsCode, startIdx-1)
+			if funcBody != "" {
+				params := DefineParams{
+					ModuleName: moduleName,
+					FuncBody:   strings.TrimSpace(funcBody),
+				}
+				results = append(results, params)
+			}
+		}
+	}
+
+	if len(results) > 0 {
+		log.Printf("使用正则表达式成功提取了 %d 个模块", len(results))
+	}
+
+	return results
+}
+
+// extractFunctionBody 从给定位置提取函数体内容（使用括号匹配）
+func extractFunctionBody(code string, startIdx int) string {
+	if startIdx < 0 || startIdx >= len(code) {
+		return ""
+	}
+
+	braceCount := 1
+	endIdx := startIdx + 1
+
+	for endIdx < len(code) && braceCount > 0 {
+		ch := code[endIdx]
+		if ch == '{' {
+			braceCount++
+		} else if ch == '}' {
+			braceCount--
+		}
+		endIdx++
+	}
+
+	if braceCount == 0 && endIdx > startIdx+1 {
+		// 返回函数体内容（不包括外层大括号）
+		body := code[startIdx+1 : endIdx-1]
+		// 清理 "use strict" 声明
+		body = strings.TrimSpace(body)
+		if strings.HasPrefix(body, `"use strict";`) || strings.HasPrefix(body, `'use strict';`) {
+			body = strings.TrimSpace(body[13:])
+		}
+		return body
+	}
+
+	return ""
+}
+
 func run(code string) ([]DefineParams, error) {
 	var results = make([]DefineParams, 0)
-	// 防止报错
+	var jsError string // 用于捕获 JavaScript 错误信息
+
+	// 添加更多全局变量 mock 以防止 ReferenceError
 	patch := `var window={};var navigator={};navigator.userAgent="iPhone";window.screen={};
-document={getElementsByTagName:()=>{}};function require(){};var global={};var __wxAppCode__={};var __wxConfig={};
-var __vd_version_info__={};var $gwx=function(){};var __g={};`
+document={getElementsByTagName:()=>{},createElement:()=>({}),body:{},head:{}};
+function require(){return {}};var global={};var __wxAppCode__={};var __wxConfig={};
+var __vd_version_info__={};var $gwx=function(){return function(){}};var __g={};
+var WeixinJSBridge={invoke:()=>{},on:()=>{},publish:()=>{},subscribe:()=>{}};
+var wx={};var getApp=function(){return {}};var getCurrentPages=function(){return []};
+var App=function(){};var Page=function(){};var Component=function(){};var Behavior=function(){};
+var getRegExp=function(){return new RegExp()};var getDate=function(){return new Date()};
+var console={log:function(){},error:function(){},warn:function(){},info:function(){}};
+var setTimeout=function(){};var setInterval=function(){};var clearTimeout=function(){};var clearInterval=function(){};
+`
 
 	scriptcode := patch + code
 
@@ -93,7 +178,7 @@ var __vd_version_info__={};var $gwx=function(){};var __g={};`
 	try {
 		` + string(scriptcode) + `
 	} catch (e) {
-		//console.error(e);
+		__jsError__ = e.toString();
 	}
 	`
 
@@ -156,9 +241,25 @@ var __vd_version_info__={};var $gwx=function(){};var __g={};`
 		return nil, err
 	}
 
+	// 初始化错误捕获变量
+	_ = vm.Set("__jsError__", "")
+
 	_, err = vm.RunString(safeScript)
 	if err != nil {
 		return nil, fmt.Errorf("failed to run JavaScript: %w", err)
+	}
+
+	// 检查 JavaScript 运行时错误
+	if jsErrorVal := vm.Get("__jsError__"); jsErrorVal != nil && !goja.IsUndefined(jsErrorVal) && !goja.IsNull(jsErrorVal) {
+		jsError = jsErrorVal.String()
+		if jsError != "" {
+			log.Printf("警告: JavaScript 执行时发生错误: %s", jsError)
+		}
+	}
+
+	// 如果没有提取到任何模块，记录警告
+	if len(results) == 0 {
+		log.Printf("警告: 未能从 JavaScript 文件中提取任何模块定义")
 	}
 
 	return results, nil
