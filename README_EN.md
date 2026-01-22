@@ -87,41 +87,43 @@ go run . -h
 ### Basic Usage
 
 ```bash
-# Auto scan and unpack Mini Program by AppID
+# Auto scan and process Mini Program by AppID
 ./gwxapkg all -id=<AppID>
+
+# List all available Mini Programs
+./gwxapkg scan
 
 # Unpack single wxapkg file
 ./gwxapkg -id=<AppID> -in=<file_path>
 
-# Enable sensitive information scanning (generate Excel report)
-./gwxapkg all -id=<AppID> -sensitive=true
+# Repack
+./gwxapkg repack -in=<directory_path>
 ```
 
 ### Command Parameters
 
-| Parameter | Short | Description | Default |
-|-----------|-------|-------------|---------|
-| `--id` | `-id` | Mini Program AppID (required) | - |
-| `--input` | `-in` | Input file path | - |
-| `--output` | `-out` | Output directory | auto-generated |
-| `--restore` | `-r` | Restore project directory structure | true |
-| `--pretty` | `-p` | Beautify JS code | true |
-| `--sensitive` | `-s` | Enable sensitive information scanning | false |
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `-id` | Mini Program AppID (required) | - |
+| `-in` | Input file/directory path | - |
+| `-out` | Output directory | auto-generated |
+| `-restore` | Restore project directory structure | true |
+| `-pretty` | Beautify code output | true |
+| `-sensitive` | Enable sensitive information scanning | true |
+| `-noClean` | Keep intermediate temporary files | false |
+| `-save` | Save decrypted files | false |
 
 ### Usage Examples
 
 ```bash
-# Example 1: Unpack all files and scan sensitive info  
-./gwxapkg all -id=wx3c19e32cb8f31289 -sensitive=true
+# Example 1: Auto scan and unpack
+./gwxapkg all -id=wx3c19e32cb8f31289
 
-# Example 2: Unpack only, no code beautification
-./gwxapkg all -id=wx123456 -pretty=false
-
-# Example 3: Unpack to specified directory
+# Example 2: Unpack single file only
 ./gwxapkg -id=wx123456 -in=test.wxapkg -out=./output
 
-# Example 4: Repack (after modification)
-./gwxapkg pack -in=./source_dir -out=new.wxapkg
+# Example 3: Repack
+./gwxapkg repack -in=./source_dir -out=new.wxapkg
 ```
 
 ---
@@ -285,6 +287,26 @@ Contributions are welcome! Please follow these steps:
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
+
+---
+
+## ❓ FAQ
+
+### 1. Why does it "crash" or close immediately when double-clicked?
+**This is a Command Line Interface (CLI) tool** and cannot be run by double-clicking.
+- **Wrong way**: Double-clicking `gwxapkg.exe` in File Explorer. This causes the window to close immediately after the program finishes or errors out.
+- **Correct way**: Open a terminal (CMD, PowerShell, or Terminal), `cd` to the tool's directory, and run the command there.
+
+### 2. Mini Program package not found?
+Ensure you have logged into the PC version of WeChat and opened the target Mini Program. If it still cannot be found, try using the `scan` command to manually verify if the detected path is correct.
+
+---
+
+## 📩 Contact
+
+Please specify your purpose when adding on WeChat. **Note: Basic "1+1" level questions (e.g., how to open a terminal, how to install Go, etc.) will NOT be answered. Please use a search engine.**
+
+<img src="https://i.imgur.com/9PxS5IK.jpeg" width="300" />
 
 ---
 

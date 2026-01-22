@@ -87,41 +87,43 @@ go run . -h
 ### 基本用法
 
 ```bash
-# 自动扫描并解包指定 AppID 的小程序
+# 自动扫描并处理指定 AppID 的小程序
 ./gwxapkg all -id=<AppID>
+
+# 查看所有可用的小程序
+./gwxapkg scan
 
 # 解包单个 wxapkg 文件
 ./gwxapkg -id=<AppID> -in=<文件路径>
 
-# 启用敏感信息扫描（生成Excel报告）
-./gwxapkg all -id=<AppID> -sensitive=true
+# 重新打包
+./gwxapkg repack -in=<目录路径>
 ```
 
 ### 命令参数
 
-| 参数 | 简写 | 说明 | 默认值 |
-|------|------|------|--------|
-| `--id` | `-id` | 小程序 AppID（必填） | - |
-| `--input` | `-in` | 输入文件路径 | - |
-| `--output` | `-out` | 输出目录 | 自动生成 |
-| `--restore` | `-r` | 还原工程目录结构 | true |
-| `--pretty` | `-p` | 美化 JS 代码 | true |
-| `--sensitive` | `-s` | 启用敏感信息扫描 | false |
+| 参数 | 说明 | 默认值 |
+|------|------|------|
+| `-id` | 小程序 AppID（必填） | - |
+| `-in` | 输入文件/目录路径 | - |
+| `-out` | 输出目录 | 自动生成 |
+| `-restore` | 还原工程目录结构 | true |
+| `-pretty` | 美化代码输出 | true |
+| `-sensitive` | 启用敏感信息扫描 | true |
+| `-noClean` | 保留中间临时文件 | false |
+| `-save` | 保存解密后的文件 | false |
 
 ### 使用示例
 
 ```bash
-# 示例1: 解包所有文件并扫描敏感信息
-./gwxapkg all -id=wx3c19e32cb8f31289 -sensitive=true
+# 示例1: 自动扫描并处理
+./gwxapkg all -id=wx3c19e32cb8f31289
 
-# 示例2: 仅解包，不美化代码
-./gwxapkg all -id=wx123456 -pretty=false
-
-# 示例3: 解包到指定目录
+# 示例2: 仅解包单个文件
 ./gwxapkg -id=wx123456 -in=test.wxapkg -out=./output
 
-# 示例4: 重新打包（修改后）
-./gwxapkg pack -in=./source_dir -out=new.wxapkg
+# 示例3: 重新打包
+./gwxapkg repack -in=./source_dir -out=new.wxapkg
 ```
 
 ---
@@ -285,6 +287,26 @@ Gwxapkg/
 ## 📄 许可证
 
 本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
+
+---
+
+## ❓ 常见问题 (FAQ)
+
+### 1. 为什么双击运行会“闪退”？
+**该工具是命令行工具 (CLI)**，不支持直接双击运行。
+- **错误做法**：在资源管理器中直接双击 `gwxapkg.exe`。这会导致程序运行完毕或报错后立即关闭窗口，看起来像“闪退”。
+- **正确做法**：打开终端（如 CMD、PowerShell 或 Terminal），先 `cd` 到工具所在目录，然后输入命令运行。
+
+### 2. 找不到小程序包？
+请确保你已经登录过 PC 版微信并打开过目标小程序。如果依然找不到，可以尝试使用 `scan` 命令手动查看工具检测到的路径是否正确。
+
+---
+
+## 📩 联系方式
+
+加微信请备注来意。**注意：1+1 这种基础问题（如：如何打开命令行、如何安装 Go 等）概不回复，请自行搜索。**
+
+<img src="https://i.imgur.com/9PxS5IK.jpeg" width="300" />
 
 ---
 
