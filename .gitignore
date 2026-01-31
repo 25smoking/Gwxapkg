@@ -1,0 +1,28 @@
+# Binaries
+*.exe
+*.so
+*.dylib
+gwxapkg
+gwxapkg-*
+
+# Test binary
+*.test
+
+# Coverage
+*.out
+*.coverprofile
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project
+*.wxapkg
+*.log
+.temp/
