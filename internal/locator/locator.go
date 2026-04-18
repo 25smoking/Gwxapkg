@@ -1,6 +1,7 @@
 package locator
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -10,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/25smoking/Gwxapkg/internal/decrypt"
 )
 
 // MiniProgramInfo 存储小程序的基本信息
@@ -22,41 +25,134 @@ type MiniProgramInfo struct {
 	Files      []string
 }
 
-// tryReadAppName 尝试从缓存目录读取小程序应用名称
-// 微信在 AppID 目录下会存放 appinfo.json / appInfo.json 等元数据文件
-func tryReadAppName(appPath string) string {
-	// 候选文件名（不同版本微信命名略有差异）
-	candidates := []string{
-		"appinfo.json",
-		"appInfo.json",
-		"app-info.json",
-		"info.json",
-	}
+// tryReadAppName 尝试读取小程序应用名称
+func tryReadAppName(appPath, appID string, files []string) string {
+	// 1. 尝试读取原版 appinfo.json（适用于 macOS）
+	candidates := []string{"appinfo.json", "appInfo.json", "app-info.json", "info.json"}
 
 	for _, name := range candidates {
 		data, err := os.ReadFile(filepath.Join(appPath, name))
 		if err != nil {
 			continue
 		}
-		// 尝试解析 JSON，支持多种字段名
 		var meta struct {
 			Nickname  string `json:"nickname"`
 			AppName   string `json:"appName"`
 			Name      string `json:"name"`
 			Title     string `json:"title"`
 		}
-		if err := json.Unmarshal(data, &meta); err != nil {
-			continue
+		if err := json.Unmarshal(data, &meta); err == nil {
+			if meta.Nickname != "" { return meta.Nickname }
+			if meta.AppName != "" { return meta.AppName }
+			if meta.Name != "" { return meta.Name }
+			if meta.Title != "" { return meta.Title }
 		}
-		switch {
-		case meta.Nickname != "":
-			return meta.Nickname
-		case meta.AppName != "":
-			return meta.AppName
-		case meta.Name != "":
-			return meta.Name
-		case meta.Title != "":
-			return meta.Title
+	}
+
+	// 2. 如果没有找到缓存的 json，尝试从主包直接读取（纯内存，7毫秒）
+	// 优先查找 __APP__.wxapkg 主包
+	var mainPkg string
+	for _, fPath := range files {
+		if strings.HasSuffix(fPath, "__APP__.wxapkg") {
+			mainPkg = fPath
+			break
+		}
+	}
+	
+	if mainPkg != "" {
+		if name := extractNameFromWxapkg(mainPkg, appID); name != "" {
+			return name
+		}
+	}
+
+	// 如果没有 __APP__.wxapkg，尝试按顺序找任意一个包含 app-config 的包（不中断直到找到）
+	for _, fPath := range files {
+		if fPath != mainPkg && strings.HasSuffix(fPath, ".wxapkg") {
+			if name := extractNameFromWxapkg(fPath, appID); name != "" {
+				return name
+			}
+		}
+	}
+
+	return ""
+}
+
+// extractNameFromWxapkg 尝试在内存中快速解密并提取包内应用名
+func extractNameFromWxapkg(file, appID string) string {
+	dec, err := decrypt.DecryptWxapkg(file, appID)
+	if err != nil || len(dec) < 14 {
+		return ""
+	}
+	
+	r := bytes.NewReader(dec)
+	var firstMark byte
+	firstMark, _ = r.ReadByte()
+	if firstMark != 0xBE {
+		return ""
+	}
+	
+	// 跳转到文件数量
+	r.Seek(14, 0)
+	var buf [4]byte
+	if _, err := r.Read(buf[:]); err != nil {
+		return ""
+	}
+	fileCount := uint32(buf[0])<<24 | uint32(buf[1])<<16 | uint32(buf[2])<<8 | uint32(buf[3])
+	
+	for i := 0; i < int(fileCount); i++ {
+		if _, err := r.Read(buf[:]); err != nil { return "" }
+		nameLen := uint32(buf[0])<<24 | uint32(buf[1])<<16 | uint32(buf[2])<<8 | uint32(buf[3])
+		
+		nameBuf := make([]byte, nameLen)
+		if _, err := r.Read(nameBuf); err != nil { return "" }
+		
+		if _, err := r.Read(buf[:]); err != nil { return "" }
+		offset := uint32(buf[0])<<24 | uint32(buf[1])<<16 | uint32(buf[2])<<8 | uint32(buf[3])
+		
+		if _, err := r.Read(buf[:]); err != nil { return "" }
+		size := uint32(buf[0])<<24 | uint32(buf[1])<<16 | uint32(buf[2])<<8 | uint32(buf[3])
+		
+		if string(nameBuf) == "/app-config.json" {
+			fileData := make([]byte, size)
+			currentPos, _ := r.Seek(0, 1)
+			r.Seek(int64(offset), 0)
+			r.Read(fileData)
+			r.Seek(currentPos, 0) // 恢复偏移量
+			
+			// 方法1：标准 JSON 解析
+			var config map[string]interface{}
+			if err := json.Unmarshal(fileData, &config); err == nil {
+				if global, ok := config["global"].(map[string]interface{}); ok {
+					if window, ok := global["window"].(map[string]interface{}); ok {
+						if title, ok := window["navigationBarTitleText"].(string); ok {
+							if title != "" { return title }
+						}
+					}
+				}
+			}
+
+			// 方法2：直接通过字节搜索，防止 JSON 结构变异或极大
+			dataStr := string(fileData)
+			
+			idx := strings.Index(dataStr, `"navigationBarTitleText":"`)
+			if idx != -1 {
+				start := idx + 26
+				end := strings.IndexByte(dataStr[start:], '"')
+				if end != -1 {
+					return dataStr[start : start+end]
+				}
+			}
+
+			idx = strings.Index(dataStr, `"appName":"`)
+			if idx != -1 {
+				start := idx + 11
+				end := strings.IndexByte(dataStr[start:], '"')
+				if end != -1 {
+					return dataStr[start : start+end]
+				}
+			}
+
+			return ""
 		}
 	}
 	return ""
@@ -80,6 +176,21 @@ func Scan() ([]MiniProgramInfo, error) {
 		appData, err := os.UserConfigDir() // 通常是 AppData/Roaming
 		if err == nil {
 			basePaths = append(basePaths, filepath.Join(appData, "Tencent/xwechat/radium/Applet/packages"))
+			
+			// 新版微信：用户隔离目录（含用户hash子目录）
+			// %APPDATA%\Tencent\xwechat\radium\users\<hash>\applet\packages
+			patterns := []string{
+				filepath.Join(appData, "Tencent/xwechat/radium/users/*/applet/packages"),
+				// %APPDATA%\Tencent\WeChat\radium\Applet\<hash>\packages
+				filepath.Join(appData, "Tencent/WeChat/radium/Applet/*/packages"),
+			}
+			for _, pattern := range patterns {
+				matches, err := filepath.Glob(pattern)
+				if err != nil {
+					continue
+				}
+				basePaths = append(basePaths, matches...)
+			}
 		}
 		// Documents 路径 (通常是 %USERPROFILE%\Documents)
 		// Go 标准库没有直接获取 Documents 的方法，尝试构建
@@ -191,7 +302,7 @@ func scanDirectory(basePath string, results *[]MiniProgramInfo) {
 			if len(wxapkgFiles) > 0 {
 				*results = append(*results, MiniProgramInfo{
 					AppID:      appID,
-					AppName:    tryReadAppName(appPath),
+					AppName:    tryReadAppName(appPath, appID, wxapkgFiles),
 					Version:    version,
 					UpdateTime: latestTime,
 					Path:       verPath,

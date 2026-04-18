@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/25smoking/Gwxapkg/cmd"
+	internalcmd "github.com/25smoking/Gwxapkg/internal/cmd"
 	"github.com/25smoking/Gwxapkg/internal/locator"
 	"github.com/25smoking/Gwxapkg/internal/pack"
 	"github.com/25smoking/Gwxapkg/internal/ui"
@@ -22,6 +23,9 @@ func main() {
 		case "scan":
 			handleScanCommand()
 			return
+		case "scan-only":
+			handleScanOnlyCommand(os.Args[2:])
+			return
 		case "repack":
 			handleRepackCommand(os.Args[2:])
 			return
@@ -33,9 +37,16 @@ func main() {
 }
 
 // handleAllCommand 处理 all 子命令：自动扫描并处理指定 AppID 的所有文件
+// 支持以下方式指定 AppID：
+//   - -id=wx111            单个
+//   - -id=wx111,wx222      逗号分隔
+//   - -id-file=ids.txt     每行一个的文件
+//   - --all                处理所有已缓存的小程序
 func handleAllCommand(args []string) {
 	allFlags := flag.NewFlagSet("all", flag.ExitOnError)
-	appID := allFlags.String("id", "", "微信小程序的AppID")
+	appID := allFlags.String("id", "", "微信小程序的AppID，支持逗号分隔多个")
+	appIDFile := allFlags.String("id-file", "", "AppID 列表文件路径（每行一个）")
+	allApps := allFlags.Bool("all", false, "处理所有已缓存的小程序")
 	outputDir := allFlags.String("out", "", "输出目录路径")
 	restoreDir := allFlags.Bool("restore", true, "是否还原工程目录结构")
 	pretty := allFlags.Bool("pretty", true, "是否美化输出")
@@ -48,43 +59,89 @@ func handleAllCommand(args []string) {
 
 	ui.Banner()
 
-	if *appID == "" {
+	// 收集 AppID 列表
+	var appIDs []string
+
+	if *allApps {
+		// --all 模式：扫描所有已缓存小程序
+		ui.Info("正在扫描所有已缓存的小程序...")
+		programs, err := locator.Scan()
+		if err != nil {
+			ui.Error("扫描失败: %v", err)
+			return
+		}
+		for _, p := range programs {
+			appIDs = append(appIDs, p.AppID)
+		}
+	} else if *appIDFile != "" {
+		// 从文件读取 AppID
+		data, err := os.ReadFile(*appIDFile)
+		if err != nil {
+			ui.Error("读取 AppID 文件失败: %v", err)
+			return
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" && !strings.HasPrefix(line, "#") {
+				appIDs = append(appIDs, line)
+			}
+		}
+	} else if *appID != "" {
+		// 逗号分隔或单个 AppID
+		for _, id := range strings.Split(*appID, ",") {
+			id = strings.TrimSpace(id)
+			if id != "" {
+				appIDs = append(appIDs, id)
+			}
+		}
+	}
+
+	if len(appIDs) == 0 {
 		ui.Error("请指定 AppID: ./Gwxapkg all -id=<AppID>")
+		ui.Info("或使用 -id-file=ids.txt 指定文件，或 --all 处理全部")
 		return
 	}
 
-	ui.Info("正在扫描 %s 的文件...", *appID)
+	ui.Info("准备处理 %d 个小程序", len(appIDs))
 	fmt.Println()
 
+	// 扫描已缓存的小程序
 	programs, err := locator.Scan()
 	if err != nil {
 		ui.Error("扫描失败: %v", err)
 		return
 	}
 
-	// 查找匹配的 AppID
-	var matched *locator.MiniProgramInfo
-	for _, p := range programs {
-		if p.AppID == *appID {
-			matched = &p
-			break
+	// 建立 AppID -> MiniProgramInfo 映射
+	programMap := make(map[string]*locator.MiniProgramInfo)
+	for i := range programs {
+		programMap[programs[i].AppID] = &programs[i]
+	}
+
+	// 逐个处理
+	for i, id := range appIDs {
+		if len(appIDs) > 1 {
+			ui.PrintDivider()
+			ui.Step(i+1, len(appIDs), "处理: %s", id)
 		}
+
+		matched, ok := programMap[id]
+		if !ok {
+			ui.Error("未找到 AppID: %s，跳过", id)
+			continue
+		}
+
+		displayName := matched.AppID
+		if matched.AppName != "" {
+			displayName = matched.AppName + " (" + matched.AppID + ")"
+		}
+		ui.Success("找到小程序: %s （版本 %s, %d 个文件）", displayName, matched.Version, len(matched.Files))
+
+		cmd.Execute(id, matched.Path, *outputDir, ".wxapkg", *restoreDir, *pretty, *noClean, *save, *sensitive, *workspace)
 	}
 
-	if matched == nil {
-		ui.Error("未找到 AppID: %s", *appID)
-		ui.Info("使用 ./Gwxapkg scan 查看所有可用的小程序")
-		return
-	}
-
-	ui.Success("找到小程序: %s (版本 %s, %d 个文件)", matched.AppID, matched.Version, len(matched.Files))
 	ui.PrintDivider()
-
-	// 使用目录路径而非单个文件
-	cmd.Execute(*appID, matched.Path, *outputDir, ".wxapkg", *restoreDir, *pretty, *noClean, *save, *sensitive, *workspace)
-
-	ui.PrintDivider()
-	ui.Success("处理完成!")
+	ui.Success("全部处理完成! (%d 个小程序)", len(appIDs))
 }
 
 // handleScanCommand 处理 scan 子命令（交互式选择解包）
@@ -136,7 +193,30 @@ func handleScanCommand() {
 	ui.Success("处理完成!")
 }
 
-// handleRepackCommand 处理 repack 子命令
+// handleScanOnlyCommand 处理 scan-only 子命令
+func handleScanOnlyCommand(args []string) {
+	f := flag.NewFlagSet("scan-only", flag.ExitOnError)
+	dir := f.String("dir", "", "已解包的目录路径")
+	appID := f.String("id", "", "AppID（可选，用于报告标题）")
+	format := f.String("format", "both", "报告格式: excel / html / both")
+	out := f.String("out", "", "报告输出目录（默认与 -dir 相同）")
+	f.Parse(args)
+
+	ui.Banner()
+
+	// 支持位置参数
+	if *dir == "" && f.NArg() > 0 {
+		*dir = f.Arg(0)
+	}
+	if *dir == "" {
+		ui.Error("请指定目录: ./Gwxapkg scan-only -dir=<已解包目录>")
+		return
+	}
+
+	internalcmd.ScanOnly(*dir, *appID, *format, *out)
+}
+
+
 func handleRepackCommand(args []string) {
 	repackFlags := flag.NewFlagSet("repack", flag.ExitOnError)
 	inputDir := repackFlags.String("in", "", "输入目录路径")

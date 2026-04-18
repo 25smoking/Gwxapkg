@@ -100,7 +100,7 @@ func Execute(appID, input, outputDir, fileExt string, restoreDir bool, pretty bo
 	fmt.Println()
 	ui.Success("输出目录: %s", filepath.Clean(outputDir))
 
-	// 如果启用了敏感信息扫描，生成Excel报告
+	// 如果启用了敏感信息扫描，生成 Excel + HTML 双格式报告
 	if sensitive {
 		collector := key.GetCollector()
 		if collector != nil {
@@ -109,16 +109,26 @@ func Execute(appID, input, outputDir, fileExt string, restoreDir bool, pretty bo
 
 			// 生成 Excel 报告
 			excelReporter := reporter.NewExcelReporter()
-			reportPath := filepath.Join(outputDir, "sensitive_report.xlsx")
-			if err := excelReporter.Generate(report, reportPath); err != nil {
-				ui.Warning("生成扫描报告失败: %v", err)
+			excelPath := filepath.Join(outputDir, "sensitive_report.xlsx")
+			if err := excelReporter.Generate(report, excelPath); err != nil {
+				ui.Warning("生成 Excel 报告失败: %v", err)
 			} else {
-				ui.Success("敏感信息报告: %s", reportPath)
-				ui.Info("   - 总匹配数: %d", report.Summary.TotalMatches)
-				ui.Info("   - 去重后: %d", report.Summary.UniqueMatches)
-				ui.Info("   - 高风险: %d | 中风险: %d | 低风险: %d",
-					report.Summary.HighRisk, report.Summary.MediumRisk, report.Summary.LowRisk)
+				ui.Success("Excel 报告: %s", excelPath)
 			}
+
+			// 生成 HTML 报告
+			htmlReporter := reporter.NewHTMLReporter()
+			htmlPath := filepath.Join(outputDir, "sensitive_report.html")
+			if err := htmlReporter.Generate(report, htmlPath); err != nil {
+				ui.Warning("生成 HTML 报告失败: %v", err)
+			} else {
+				ui.Success("HTML 报告: %s", htmlPath)
+			}
+
+			ui.Info("   - 总匹配数: %d", report.Summary.TotalMatches)
+			ui.Info("   - 去重后: %d", report.Summary.UniqueMatches)
+			ui.Info("   - 高风险: %d | 中风险: %d | 低风险: %d",
+				report.Summary.HighRisk, report.Summary.MediumRisk, report.Summary.LowRisk)
 
 			// 清理收集器
 			key.ResetCollector()
