@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-2.6.0-blue.svg)
+![Version](https://img.shields.io/badge/version-2.7.0-blue.svg)
 ![Go Version](https://img.shields.io/badge/go-%3E%3D1.21-00ADD8.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)
@@ -194,20 +194,29 @@ go run . -h
 
 ---
 
-## 📈 性能对比（v2.6.0 vs v1.0）
+## 📈 性能对比（v2.7.0 vs v1.0）
 
-| 指标 | v1.0 | v2.6.0 | 改进 |
+| 指标 | v1.0 | v2.7.0 | 改进 |
 |------|------|--------|------|
 | **扫描速度** | 基准 | +50-70% | ⬆️⬆️⬆️ 规则预编译 |
 | **误报率** | ~95% | 10-15% | ⬇️⬇️⬇️ 智能过滤 |  
 | **数据量** | 127,185条 | ~3,000条 | ⬇️⬇️⬇️ 去重+过滤 |
-| **输出格式** | JSON | Excel | ✅ 专业报告 |
+| **输出格式** | JSON | Excel/HTML | ✅ 交互式报告 |
 | **并发性能** | 10固定 | CPU*2动态 | ⬆️⬆️ 自适应 |
 | **I/O性能** | 直接写入 | 256KB缓冲 | ⬆️⬆️ 减少系统调用 |
 
 ---
 
 ## 🔄 版本更新
+
+### v2.7.0 (2026-04-18) - 💥 大版本功能增强
+
+#### 🆕 新增功能
+- 📊 **HTML 交互式报告** - 新增了美观的可视化安全分析 HTML 报告格式，带饼图、快速过滤与分类选项。
+- 🔍 **`scan-only` 独立命令** - 支持对纯净的已解包目录直接发起代码/敏感信息审查，不被解包流程束缚。
+- 🗂️ **全自动化集成流** - 深度融入 GitHub Actions，支持跨平台 Release 推送及 CI 测试流程。
+- 🪟 **Windows AppName 提取黑科技** - Gwxapkg 能够在不到 10 毫秒内于内存热解包，完美在 Windows PC 平台直接剥离并打印所有主程序的真实名字。
+- ⚙️ **批量扫描支持扩展** - 支持通过 `-id="wx1,wx2"` 以及 `-id-file=ids.txt` 大规模批量化导出特定程序。
 
 ### v2.6.0 (2026-03-17) - 🚀 稳定版本
 
