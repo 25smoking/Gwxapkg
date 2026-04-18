@@ -1,6 +1,7 @@
 package locator
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -14,10 +15,51 @@ import (
 // MiniProgramInfo 存储小程序的基本信息
 type MiniProgramInfo struct {
 	AppID      string
+	AppName    string
 	Version    string
 	UpdateTime time.Time
 	Path       string
 	Files      []string
+}
+
+// tryReadAppName 尝试从缓存目录读取小程序应用名称
+// 微信在 AppID 目录下会存放 appinfo.json / appInfo.json 等元数据文件
+func tryReadAppName(appPath string) string {
+	// 候选文件名（不同版本微信命名略有差异）
+	candidates := []string{
+		"appinfo.json",
+		"appInfo.json",
+		"app-info.json",
+		"info.json",
+	}
+
+	for _, name := range candidates {
+		data, err := os.ReadFile(filepath.Join(appPath, name))
+		if err != nil {
+			continue
+		}
+		// 尝试解析 JSON，支持多种字段名
+		var meta struct {
+			Nickname  string `json:"nickname"`
+			AppName   string `json:"appName"`
+			Name      string `json:"name"`
+			Title     string `json:"title"`
+		}
+		if err := json.Unmarshal(data, &meta); err != nil {
+			continue
+		}
+		switch {
+		case meta.Nickname != "":
+			return meta.Nickname
+		case meta.AppName != "":
+			return meta.AppName
+		case meta.Name != "":
+			return meta.Name
+		case meta.Title != "":
+			return meta.Title
+		}
+	}
+	return ""
 }
 
 // Scan 扫描所有可能的微信小程序目录
@@ -149,6 +191,7 @@ func scanDirectory(basePath string, results *[]MiniProgramInfo) {
 			if len(wxapkgFiles) > 0 {
 				*results = append(*results, MiniProgramInfo{
 					AppID:      appID,
+					AppName:    tryReadAppName(appPath),
 					Version:    version,
 					UpdateTime: latestTime,
 					Path:       verPath,

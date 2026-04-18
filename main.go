@@ -87,7 +87,7 @@ func handleAllCommand(args []string) {
 	ui.Success("处理完成!")
 }
 
-// handleScanCommand 处理 scan 子命令
+// handleScanCommand 处理 scan 子命令（交互式选择解包）
 func handleScanCommand() {
 	ui.Banner()
 	ui.Info("正在扫描微信小程序目录...")
@@ -109,17 +109,31 @@ func handleScanCommand() {
 	fmt.Println()
 
 	for i, p := range programs {
-		ui.PrintMiniProgram(i+1, p.AppID, p.Version, p.UpdateTime, len(p.Files), p.Path)
+		ui.PrintMiniProgramWithName(i+1, p.AppID, p.AppName, p.Version, p.UpdateTime, len(p.Files), p.Path)
 	}
 
 	ui.PrintDivider()
+
+	// 交互式选择
+	choice := ui.Prompt(len(programs))
+	if choice == -1 {
+		ui.Info("已退出")
+		return
+	}
+
+	selected := programs[choice-1]
+	displayName := selected.AppID
+	if selected.AppName != "" {
+		displayName = selected.AppName + " (" + selected.AppID + ")"
+	}
+	ui.Success("已选择: %s", displayName)
 	fmt.Println()
 
-	if len(programs) > 0 {
-		ui.Info("快速处理示例:")
-		fmt.Printf("  ./Gwxapkg all -id=%s\n", programs[0].AppID)
-		fmt.Println()
-	}
+	// 直接进入解包流程（复用 all 命令的默认参数）
+	cmd.Execute(selected.AppID, selected.Path, "", ".wxapkg", true, true, false, false, true, false)
+
+	ui.PrintDivider()
+	ui.Success("处理完成!")
 }
 
 // handleRepackCommand 处理 repack 子命令

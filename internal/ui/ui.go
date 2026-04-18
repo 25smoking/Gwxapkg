@@ -1,8 +1,11 @@
 package ui
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/fatih/color"
@@ -99,9 +102,38 @@ func NewSpinner(description string) *progressbar.ProgressBar {
 
 // PrintMiniProgram 美化打印小程序信息
 func PrintMiniProgram(index int, appID, version string, updateTime time.Time, fileCount int, path string) {
-	fmt.Printf("  %s %s\n", cyan.Sprintf("%2d.", index), green.Sprint(appID))
+	PrintMiniProgramWithName(index, appID, "", version, updateTime, fileCount, path)
+}
+
+// PrintMiniProgramWithName 美化打印小程序信息（含应用名）
+func PrintMiniProgramWithName(index int, appID, appName, version string, updateTime time.Time, fileCount int, path string) {
+	nameStr := ""
+	if appName != "" {
+		nameStr = "  " + magenta.Sprint(appName)
+	}
+	fmt.Printf("  %s %s%s\n", cyan.Sprintf("%2d.", index), green.Sprint(appID), nameStr)
 	dim.Printf("     版本: %s │ 文件: %d │ 更新: %s\n", version, fileCount, updateTime.Format("2006-01-02 15:04"))
 	dim.Printf("     路径: %s\n\n", path)
+}
+
+// Prompt 显示提示并读取用户输入的编号，返回选择的索引 (1-based)。
+// 输入 q 返回 -1，输入无效时重新提示。
+func Prompt(maxIndex int) int {
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		yellow.Print("\n请选择要处理的小程序编号（输入 q 退出）: ")
+		line, _ := reader.ReadString('\n')
+		line = strings.TrimSpace(line)
+		if line == "q" || line == "Q" {
+			return -1
+		}
+		n, err := strconv.Atoi(line)
+		if err != nil || n < 1 || n > maxIndex {
+			red.Printf("无效输入，请输入 1-%d 之间的数字或 q 退出\n", maxIndex)
+			continue
+		}
+		return n
+	}
 }
 
 // PrintDivider 打印分隔线
