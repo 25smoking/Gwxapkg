@@ -24,6 +24,8 @@ var (
 
 var errDeobfuscationTimeout = errors.New("反混淆执行超时")
 
+var analyzeJavaScriptCore = analyzeJavaScript
+
 // DeobfuscationResult 反混淆分析结果
 type DeobfuscationResult struct {
 	Content       []byte
@@ -58,7 +60,25 @@ type runtimeState struct {
 }
 
 // AnalyzeJavaScript 分析并尝试还原常见 JS 混淆
-func AnalyzeJavaScript(input []byte, filePath string) (*DeobfuscationResult, error) {
+func AnalyzeJavaScript(input []byte, filePath string) (result *DeobfuscationResult, err error) {
+	result = &DeobfuscationResult{
+		Content: append([]byte(nil), input...),
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			result = &DeobfuscationResult{
+				Content:    append([]byte(nil), input...),
+				Techniques: []string{"analysis-panic"},
+				Status:     "skipped",
+			}
+			err = nil
+		}
+	}()
+
+	return analyzeJavaScriptCore(input, filePath)
+}
+
+func analyzeJavaScript(input []byte, filePath string) (*DeobfuscationResult, error) {
 	original := string(input)
 	staticContent, staticTechniques, staticChanged := decodeStaticJavaScript(original)
 
@@ -316,9 +336,15 @@ func analyzeBootstrap(source string) *bootstrapAnalysis {
 	if err != nil {
 		return analysis
 	}
+	if program == nil {
+		return analysis
+	}
 	analysis.program = program
 
 	for _, statement := range program.Body {
+		if statement == nil {
+			continue
+		}
 		switch node := statement.(type) {
 		case *ast.VariableStatement:
 			if markStringArrayStatement(node, analysis) {
@@ -332,6 +358,9 @@ func analyzeBootstrap(source string) *bootstrapAnalysis {
 	}
 
 	for _, statement := range program.Body {
+		if statement == nil {
+			continue
+		}
 		switch node := statement.(type) {
 		case *ast.VariableStatement:
 			if markDecoderVarStatement(node, analysis) {
@@ -349,14 +378,20 @@ func analyzeBootstrap(source string) *bootstrapAnalysis {
 }
 
 func markStringArrayStatement(statement *ast.VariableStatement, analysis *bootstrapAnalysis) bool {
+	if statement == nil || analysis == nil {
+		return false
+	}
 	matched := false
 	for _, binding := range statement.List {
+		if binding == nil {
+			continue
+		}
 		identifier, ok := binding.Target.(*ast.Identifier)
-		if !ok {
+		if !ok || identifier == nil {
 			continue
 		}
 		arrayLiteral, ok := binding.Initializer.(*ast.ArrayLiteral)
-		if !ok {
+		if !ok || arrayLiteral == nil {
 			continue
 		}
 		if !isLikelyStringArray(arrayLiteral) {
@@ -371,10 +406,16 @@ func markStringArrayStatement(statement *ast.VariableStatement, analysis *bootst
 }
 
 func markDecoderVarStatement(statement *ast.VariableStatement, analysis *bootstrapAnalysis) bool {
+	if statement == nil || analysis == nil {
+		return false
+	}
 	matched := false
 	for _, binding := range statement.List {
+		if binding == nil {
+			continue
+		}
 		identifier, ok := binding.Target.(*ast.Identifier)
-		if !ok {
+		if !ok || identifier == nil {
 			continue
 		}
 		switch initializer := binding.Initializer.(type) {
@@ -401,7 +442,7 @@ func markDecoderFunction(function *ast.FunctionLiteral, analysis *bootstrapAnaly
 }
 
 func markDecoderFunctionWithName(name string, function *ast.FunctionLiteral, analysis *bootstrapAnalysis) bool {
-	if function == nil || name == "" {
+	if function == nil || analysis == nil || name == "" {
 		return false
 	}
 	if obfuscatedIdentifierPattern.MatchString(name) || functionReferencesAny(function, analysis.arrays) {
@@ -509,12 +550,18 @@ func prepareRuntime(bootstrap string, analysis *bootstrapAnalysis) (*runtimeStat
 }
 
 func collectReplacements(program *ast.Program, state *runtimeState, source string) []replacement {
+	if program == nil || state == nil {
+		return nil
+	}
 	replacements := make([]replacement, 0)
 	seen := make(map[string]struct{})
 
 	walkNode(program, func(node ast.Node) {
 		switch expr := node.(type) {
 		case *ast.CallExpression:
+			if expr == nil {
+				return
+			}
 			name, ok := calleeName(expr.Callee)
 			if !ok {
 				return
@@ -543,8 +590,11 @@ func collectReplacements(program *ast.Program, state *runtimeState, source strin
 				literal: literal,
 			})
 		case *ast.BracketExpression:
+			if expr == nil {
+				return
+			}
 			identifier, ok := expr.Left.(*ast.Identifier)
-			if !ok {
+			if !ok || identifier == nil {
 				return
 			}
 			values, exists := state.runtimeText[identifier.Name.String()]
@@ -582,6 +632,9 @@ func buildBootstrapSource(source string, statements []ast.Statement) string {
 
 	var out strings.Builder
 	for _, statement := range statements {
+		if statement == nil {
+			continue
+		}
 		snippet := strings.TrimSpace(sliceNodeSource(source, statement))
 		if snippet == "" {
 			continue
@@ -872,6 +925,9 @@ func isLikelyStringArray(arrayLiteral *ast.ArrayLiteral) bool {
 	count := 0
 	totalLength := 0
 	for _, expr := range arrayLiteral.Value {
+		if expr == nil {
+			return false
+		}
 		switch value := expr.(type) {
 		case *ast.StringLiteral:
 			count++
@@ -887,6 +943,9 @@ func dedupeStatements(statements []ast.Statement) []ast.Statement {
 	result := make([]ast.Statement, 0, len(statements))
 	seen := make(map[string]struct{})
 	for _, statement := range statements {
+		if statement == nil {
+			continue
+		}
 		key := fmt.Sprintf("%d:%d", int(statement.Idx0()), int(statement.Idx1()))
 		if _, exists := seen[key]; exists {
 			continue
@@ -898,6 +957,9 @@ func dedupeStatements(statements []ast.Statement) []ast.Statement {
 }
 
 func sliceNodeSource(source string, node ast.Node) string {
+	if node == nil {
+		return ""
+	}
 	start := nodeStart(node)
 	end := nodeEnd(node)
 	if start < 0 || end > len(source) || start >= end {
@@ -907,18 +969,30 @@ func sliceNodeSource(source string, node ast.Node) string {
 }
 
 func nodeStart(node ast.Node) int {
+	if node == nil {
+		return -1
+	}
 	return max(int(node.Idx0())-1, 0)
 }
 
 func nodeEnd(node ast.Node) int {
+	if node == nil {
+		return -1
+	}
 	return max(int(node.Idx1())-1, 0)
 }
 
 func calleeName(expr ast.Expression) (string, bool) {
 	switch node := expr.(type) {
 	case *ast.Identifier:
+		if node == nil {
+			return "", false
+		}
 		return node.Name.String(), true
 	case *ast.DotExpression:
+		if node == nil {
+			return "", false
+		}
 		return node.Identifier.Name.String(), true
 	default:
 		return "", false
@@ -926,12 +1000,25 @@ func calleeName(expr ast.Expression) (string, bool) {
 }
 
 func walkNode(node ast.Node, fn func(ast.Node)) {
-	if node == nil {
+	if isNilNode(node) {
 		return
 	}
 
 	fn(node)
 	walkStructFields(reflect.ValueOf(node), fn)
+}
+
+func isNilNode(node ast.Node) bool {
+	if node == nil {
+		return true
+	}
+	value := reflect.ValueOf(node)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
 }
 
 func walkStructFields(value reflect.Value, fn func(ast.Node)) {

@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-2.7.1-blue.svg)
+![Version](https://img.shields.io/badge/version-2.7.2-blue.svg)
 ![Go Version](https://img.shields.io/badge/go-%3E%3D1.21-00ADD8.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)
@@ -369,9 +369,9 @@ output/
 
 ---
 
-## 📈 パフォーマンス比較（v2.7.1 vs v1.0）
+## 📈 パフォーマンス比較（v2.7.2 vs v1.0）
 
-| 指標 | v1.0 | v2.7.1 | 改善点 |
+| 指標 | v1.0 | v2.7.2 | 改善点 |
 |------|------|--------|--------|
 | **スキャン速度** | 基準 | +50-70% | 正規表現の事前コンパイル |
 | **誤検知抑制** | 単純な正規表現走査 | 多層フィルタ | ブラックリスト + 文脈 + プレースホルダ + 弱値フィルタ |
@@ -383,6 +383,17 @@ output/
 ---
 
 ## 🔄 バージョン更新
+
+### v2.7.2 (2026-04-29) - 反難読化の安定性修正
+
+#### 修正
+- `all` 実行中に HTML の `<script>` 内 JavaScript を反難読化する際、`nil pointer dereference` で全体がクラッシュする可能性がある問題を修正
+- `goja` AST の走査と変数宣言検出を強化し、不完全な `VariableStatement`、`Binding`、typed nil ノードを安全に扱うよう改善
+- 単一の JavaScript 断片で反難読化分析に失敗しても、元の内容を保持して解包処理を継続するよう改善
+
+#### 検証
+- JavaScript 分析 panic、HTML 内蔵 script panic、不完全 AST ノードを対象に formatter 回帰テストを追加
+- `go test ./...` と Windows amd64 クロスコンパイルで検証済み
 
 ### v2.7.1 (2026-04-21) - ルート解析強化
 

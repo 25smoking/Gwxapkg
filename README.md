@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-2.7.1-blue.svg)
+![Version](https://img.shields.io/badge/version-2.7.2-blue.svg)
 ![Go Version](https://img.shields.io/badge/go-%3E%3D1.21-00ADD8.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)
@@ -369,9 +369,9 @@ output/
 
 ---
 
-## 📈 性能对比（v2.7.1 vs v1.0）
+## 📈 性能对比（v2.7.2 vs v1.0）
 
-| 指标 | v1.0 | v2.7.1 | 改进 |
+| 指标 | v1.0 | v2.7.2 | 改进 |
 |------|------|--------|------|
 | **扫描速度** | 基准 | +50-70% | ⬆️⬆️⬆️ 规则预编译 |
 | **误报控制** | 基础正则直扫 | 多层过滤收敛 | ✅ 黑名单 + 上下文 + 占位符 + 弱值过滤 |  
@@ -383,6 +383,17 @@ output/
 ---
 
 ## 🔄 版本更新
+
+### v2.7.2 (2026-04-29) - 🛡️ 反混淆稳定性修复
+
+#### 🔧 修复
+- 修复 HTML 内嵌 `<script>` 在 JS 反混淆分析阶段可能触发 `nil pointer dereference` 并导致 `all` 命令整体崩溃的问题
+- 强化 `goja` AST 遍历与变量声明识别的空节点防护，覆盖不完整 `VariableStatement`、`Binding`、typed nil 节点等边界情况
+- 当单个 JS 片段反混淆分析异常时，会保留原始内容并继续解包，避免异常样本中断整包处理
+
+#### ✅ 验证
+- 新增 formatter 回归测试，覆盖 JS 分析 panic、HTML 内嵌脚本 panic 与异常 AST 节点
+- 已验证 `go test ./...` 与 Windows amd64 交叉编译
 
 ### v2.7.1 (2026-04-21) - 🧭 路由分析增强
 
