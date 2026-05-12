@@ -3,14 +3,18 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/25smoking/Gwxapkg/cmd"
 	internalcmd "github.com/25smoking/Gwxapkg/internal/cmd"
 	"github.com/25smoking/Gwxapkg/internal/locator"
 	"github.com/25smoking/Gwxapkg/internal/pack"
+	"github.com/25smoking/Gwxapkg/internal/semantic"
 	"github.com/25smoking/Gwxapkg/internal/ui"
+	"github.com/25smoking/Gwxapkg/internal/util"
 )
 
 func main() {
@@ -25,6 +29,12 @@ func main() {
 			return
 		case "scan-only":
 			handleScanOnlyCommand(os.Args[2:])
+			return
+		case "semantic":
+			handleSemanticCommand(os.Args[2:])
+			return
+		case "api-link":
+			handleAPILinkCommand(os.Args[2:])
 			return
 		case "repack":
 			handleRepackCommand(os.Args[2:])
@@ -56,6 +66,9 @@ func handleAllCommand(args []string) {
 	sensitive := allFlags.Bool("sensitive", true, "是否获取敏感数据")
 	postman := allFlags.Bool("postman", false, "是否导出 Postman Collection")
 	workspace := allFlags.Bool("workspace", false, "是否保留可精确回包的工作区")
+	astRename := allFlags.String("ast-rename", semantic.ASTRenameModeDeep, "AST 重命名模式: off/report/safe/deep")
+	astDiff := allFlags.Bool("ast-diff", true, "是否生成 AST 重命名 diff 报告")
+	astPatch := allFlags.Bool("ast-patch", true, "是否生成 AST 重命名 patch")
 
 	allFlags.Parse(args)
 
@@ -145,7 +158,7 @@ func handleAllCommand(args []string) {
 		}
 		ui.Success("找到小程序: %s （版本 %s, %d 个文件）", displayName, matched.Version, len(matched.Files))
 
-		cmd.Execute(id, matched.Path, *outputDir, ".wxapkg", *restoreDir, *pretty, *noClean, *save, *sensitive, *postman, *workspace)
+		cmd.ExecuteWithOptions(id, matched.Path, *outputDir, ".wxapkg", *restoreDir, *pretty, *noClean, *save, *sensitive, *postman, *workspace, buildRewriteOptions(*astRename, *astDiff, *astPatch))
 	}
 
 	ui.PrintDivider()
@@ -157,6 +170,9 @@ func handleScanCommand(args []string) {
 	scanFlags := flag.NewFlagSet("scan", flag.ExitOnError)
 	verbose := scanFlags.Bool("verbose", false, "显示扫描候选路径诊断")
 	postman := scanFlags.Bool("postman", false, "是否导出 Postman Collection")
+	astRename := scanFlags.String("ast-rename", semantic.ASTRenameModeDeep, "AST 重命名模式: off/report/safe/deep")
+	astDiff := scanFlags.Bool("ast-diff", true, "是否生成 AST 重命名 diff 报告")
+	astPatch := scanFlags.Bool("ast-patch", true, "是否生成 AST 重命名 patch")
 	scanFlags.Parse(args)
 
 	ui.Banner()
@@ -205,7 +221,7 @@ func handleScanCommand(args []string) {
 	fmt.Println()
 
 	// 直接进入解包流程（复用 all 命令的默认参数）
-	cmd.Execute(selected.AppID, selected.Path, outputDir, ".wxapkg", true, true, false, false, true, *postman, false)
+	cmd.ExecuteWithOptions(selected.AppID, selected.Path, outputDir, ".wxapkg", true, true, false, false, true, *postman, false, buildRewriteOptions(*astRename, *astDiff, *astPatch))
 
 	ui.PrintDivider()
 	ui.Success("处理完成!")
@@ -274,6 +290,137 @@ func handleScanOnlyCommand(args []string) {
 	internalcmd.ScanOnly(*dir, *appID, *format, *out, *postman)
 }
 
+func handleSemanticCommand(args []string) {
+	f := flag.NewFlagSet("semantic", flag.ExitOnError)
+	dir := f.String("dir", "", "已解包目录路径")
+	astRename := f.String("ast-rename", semantic.ASTRenameModeDeep, "AST 重命名模式: off/report/safe/deep")
+	astDiff := f.Bool("ast-diff", true, "是否生成 AST 重命名 diff 报告")
+	astPatch := f.Bool("ast-patch", true, "是否生成 AST 重命名 patch")
+	astRollback := f.Bool("ast-rollback", false, "是否回滚 AST 重命名写回")
+	f.Parse(args)
+
+	ui.Banner()
+
+	if *dir == "" && f.NArg() > 0 {
+		*dir = f.Arg(0)
+	}
+	if *dir == "" {
+		ui.Error("请指定目录: ./Gwxapkg semantic -dir=<已解包目录>")
+		return
+	}
+
+	expandedDir, err := util.ExpandHomePath(*dir)
+	if err != nil {
+		ui.Warning("展开目录失败，继续使用原路径: %v", err)
+		expandedDir = *dir
+	}
+	info, err := os.Stat(expandedDir)
+	if err != nil {
+		ui.Error("目录不可访问: %v", err)
+		return
+	}
+	if !info.IsDir() {
+		ui.Error("semantic 需要传入已解包目录")
+		return
+	}
+
+	if *astRollback {
+		report, err := semantic.RollbackASTRenames(expandedDir)
+		if err != nil {
+			ui.Error("AST 重命名回滚失败: %v", err)
+			return
+		}
+		ui.Success("AST 重命名已回滚: %d 个文件", len(report.RestoredFiles))
+		return
+	}
+
+	rewriteOptions := buildRewriteOptions(*astRename, *astDiff, *astPatch)
+	printASTRenameNotice(rewriteOptions.ASTRename)
+	report, err := semantic.RewriteProjectWithOptions(expandedDir, rewriteOptions)
+	if err != nil {
+		ui.Error("源码语义反混淆失败: %v", err)
+		return
+	}
+
+	ui.Success("源码语义映射: %s", filepath.Join(expandedDir, ".gwxapkg", "semantic_module_map.json"))
+	ui.Info("   - 语义重命名: %d | require 重写: %d | SourceMap 源码: %d",
+		report.RenamedCount,
+		report.RewrittenRequireCount,
+		report.SourceMapRecovered,
+	)
+	if report.APIEndpointCount > 0 {
+		ui.Success("API 地图: %s", filepath.Join(expandedDir, ".gwxapkg", "api_map.md"))
+		ui.Info("   - API 函数: %d | 细拆模块: %d",
+			report.APIEndpointCount,
+			report.APISplitCount,
+		)
+		ui.Success("API 调用链: %s", filepath.Join(expandedDir, ".gwxapkg", "api_call_chain.md"))
+		ui.Success("API 伪代码: %s", filepath.Join(expandedDir, ".gwxapkg", "api_pseudo.md"))
+	}
+	if report.ASTRenamedCount > 0 {
+		ui.Success("AST 重命名报告: %s", filepath.Join(expandedDir, ".gwxapkg", "ast_rename_map.json"))
+		ui.Info("   - AST 重命名: %d | 文件数: %d",
+			report.ASTRenamedCount,
+			report.ASTRenamedFiles,
+		)
+	}
+}
+
+func handleAPILinkCommand(args []string) {
+	f := flag.NewFlagSet("api-link", flag.ExitOnError)
+	dir := f.String("dir", "", "已解包目录路径")
+	burpFile := f.String("burp-file", "", "Burp 原始请求文件")
+	f.Parse(args)
+
+	ui.Banner()
+
+	if *dir == "" && f.NArg() > 0 {
+		*dir = f.Arg(0)
+	}
+	if *dir == "" {
+		ui.Error("请指定目录: ./Gwxapkg api-link -dir=<已解包目录> -burp-file=<raw_request.txt>")
+		return
+	}
+
+	expandedDir, err := util.ExpandHomePath(*dir)
+	if err != nil {
+		ui.Warning("展开目录失败，继续使用原路径: %v", err)
+		expandedDir = *dir
+	}
+
+	var raw []byte
+	if *burpFile != "" {
+		expandedFile, err := util.ExpandHomePath(*burpFile)
+		if err != nil {
+			ui.Warning("展开 Burp 文件失败，继续使用原路径: %v", err)
+			expandedFile = *burpFile
+		}
+		raw, err = os.ReadFile(expandedFile)
+		if err != nil {
+			ui.Error("读取 Burp 请求失败: %v", err)
+			return
+		}
+	} else {
+		raw, err = io.ReadAll(os.Stdin)
+		if err != nil {
+			ui.Error("读取 stdin 失败: %v", err)
+			return
+		}
+	}
+	if strings.TrimSpace(string(raw)) == "" {
+		ui.Error("Burp 原始请求为空")
+		return
+	}
+
+	report, err := semantic.LinkBurpRequest(expandedDir, string(raw))
+	if err != nil {
+		ui.Error("Burp 请求关联失败: %v", err)
+		return
+	}
+	ui.Success("Burp API 关联报告: %s", filepath.Join(expandedDir, ".gwxapkg", "burp_api_link.md"))
+	ui.Info("   - 匹配候选: %d", len(report.Matches))
+}
+
 func handleRepackCommand(args []string) {
 	repackFlags := flag.NewFlagSet("repack", flag.ExitOnError)
 	inputDir := repackFlags.String("in", "", "输入目录路径")
@@ -312,6 +459,9 @@ func handleDefaultCommand() {
 	sensitive := flag.Bool("sensitive", true, "是否获取敏感数据")
 	postman := flag.Bool("postman", false, "是否导出 Postman Collection")
 	workspace := flag.Bool("workspace", false, "是否保留可精确回包的工作区")
+	astRename := flag.String("ast-rename", semantic.ASTRenameModeDeep, "AST 重命名模式: off/report/safe/deep")
+	astDiff := flag.Bool("ast-diff", true, "是否生成 AST 重命名 diff 报告")
+	astPatch := flag.Bool("ast-patch", true, "是否生成 AST 重命名 patch")
 
 	flag.Parse()
 
@@ -324,7 +474,28 @@ func handleDefaultCommand() {
 
 	ui.Info("开始处理小程序: %s", *appID)
 	ui.PrintDivider()
-	cmd.Execute(*appID, *input, *outputDir, *fileExt, *restoreDir, *pretty, *noClean, *save, *sensitive, *postman, *workspace)
+	cmd.ExecuteWithOptions(*appID, *input, *outputDir, *fileExt, *restoreDir, *pretty, *noClean, *save, *sensitive, *postman, *workspace, buildRewriteOptions(*astRename, *astDiff, *astPatch))
 	ui.PrintDivider()
 	ui.Success("处理完成!")
+}
+
+func buildRewriteOptions(astMode string, astDiff bool, astPatch bool) semantic.RewriteOptions {
+	return semantic.RewriteOptions{
+		ASTRename: semantic.ASTRenameOptions{
+			Mode:          astMode,
+			GenerateDiff:  astDiff,
+			GeneratePatch: astPatch,
+		},
+	}
+}
+
+func printASTRenameNotice(options semantic.ASTRenameOptions) {
+	lines := semantic.ASTRenameNoticeLines(options)
+	if len(lines) == 0 {
+		return
+	}
+	ui.Warning(lines[0])
+	for _, line := range lines[1:] {
+		ui.Info("   - %s", line)
+	}
 }

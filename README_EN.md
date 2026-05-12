@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-2.7.2-blue.svg)
+![Version](https://img.shields.io/badge/version-2.7.3-blue.svg)
 ![Go Version](https://img.shields.io/badge/go-%3E%3D1.21-00ADD8.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)
@@ -62,6 +62,9 @@ A Go-based WeChat Mini Program `.wxapkg` unpacker with automatic scanning, decry
 - **Full restoration** - Supports `wxml`, `wxss`, `js`, `json`, and `wxs`
 - **Code beautification** - Automatically formats JavaScript, CSS, and HTML
 - **Default deobfuscation** - Performs static restoration and controlled decoding for common string-array patterns, `\xNN`, `\uNNNN`, and hexadecimal literals
+- **Source-level semantic restoration** - Enables AST `deep` mode by default to rewrite compressed local names into audit-friendly names such as `params`, `requestData`, `response`, `event`, and `app`
+- **Traceable AST write-back** - Generates `ast_rename_map.json`, `ast_rename_diff.md`, and `ast_rename.patch`, while keeping pre-write sources for `semantic -ast-rollback=true`
+- **API semantic views** - Generates `api_map`, API call chains, audit pseudocode, and can link raw Burp requests back to source APIs
 - **Route map generation** - Builds page lists, entry pages, subpackages, TabBar pages, component dependencies, static and dynamic navigation edges, trigger clues, and page-level API attribution
 - **Project structure restore** - Restores the original Mini Program directory structure
 - **Asset extraction** - Fully extracts images, audio, video, and other resource files
@@ -369,9 +372,9 @@ Obfuscated-file entries additionally include:
 
 ---
 
-## 📈 Performance Comparison (v2.7.2 vs v1.0)
+## 📈 Performance Comparison (v2.7.3 vs v1.0)
 
-| Metric | v1.0 | v2.7.2 | Improvement |
+| Metric | v1.0 | v2.7.3 | Improvement |
 |--------|------|--------|-------------|
 | **Scan speed** | Baseline | +50-70% | Regex precompilation |
 | **False-positive control** | Basic regex-only scan | Multi-layer filtering | Blacklist + context + placeholder + weak-value filtering |
@@ -383,6 +386,25 @@ Obfuscated-file entries additionally include:
 ---
 
 ## 🔄 Version History
+
+### v2.7.3 (2026-05-12) - Semantic and AST Deep Restoration
+
+#### New
+- Added AST-level variable/function renaming with default `-ast-rename=deep`, applying high/medium-confidence local variable, function parameter, and local function-name rewrites
+- Added `off/report/safe/deep` AST modes, with runtime CLI warnings that explain the active strategy, rewrite scope, protected symbols, and rollback path
+- Added `.gwxapkg/ast_rename_map.json`, `.gwxapkg/ast_rename_diff.md`, `.gwxapkg/ast_rename.patch`, and `.gwxapkg/pre_ast_sources` for traceable write-back and rollback
+- Added API call-chain artifacts: `.gwxapkg/api_call_chain.json` and `.gwxapkg/api_call_chain.md`
+- Added AST API audit pseudocode in `.gwxapkg/api_pseudo.md` and `.gwxapkg/pseudo_api/*.js`
+- Added the `api-link` command to connect raw Burp requests from a file or stdin to source-level API entries
+
+#### Improved
+- `scan`, `all`, the default unpack command, and `semantic -dir` now support `-ast-rename`, `-ast-diff`, and `-ast-patch`
+- AST write-back explicitly protects `exports.xxx`, object keys, strings, comments, WXML handlers, and global/public identifiers such as `wx/uni/getApp/require/module/exports`
+- `semantic_module_map.json` now includes AST statistics, API call-chain paths, and API pseudocode paths for audit traceability
+
+#### Verified
+- Added regression tests for AST modes, confidence gating, diff/patch/rollback, API call chains, pseudocode, and Burp request linking
+- Verified with `go test ./...` and `go build ./...`
 
 ### v2.7.2 (2026-04-30) - Stability and Report Fixes
 

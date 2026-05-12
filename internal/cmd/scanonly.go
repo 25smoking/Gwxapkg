@@ -94,6 +94,11 @@ func ScanOnly(dir string, appID string, format string, outputDir string, postman
 	if outputDir == "" {
 		outputDir = dir
 	}
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		ui.Error("创建报告输出目录失败: %v", err)
+		key.ResetCollector()
+		return
+	}
 
 	ui.Step(2, 2, "生成报告...")
 

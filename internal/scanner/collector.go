@@ -153,6 +153,50 @@ func (c *DataCollector) SetTotalFiles(count int) {
 	c.totalFiles = count
 }
 
+// RewriteFilePaths 在后处理重命名模块后同步报告中的文件路径。
+func (c *DataCollector) RewriteFilePaths(pathMap map[string]string) {
+	if len(pathMap) == 0 {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	rename := func(value string) string {
+		if next, ok := pathMap[value]; ok {
+			return next
+		}
+		return value
+	}
+
+	for i := range c.items {
+		c.items[i].FilePath = rename(c.items[i].FilePath)
+	}
+	for _, dedup := range c.dedup {
+		dedup.FirstItem.FilePath = rename(dedup.FirstItem.FilePath)
+		for i := range dedup.Locations {
+			dedup.Locations[i].FilePath = rename(dedup.Locations[i].FilePath)
+		}
+	}
+	for _, category := range c.categories {
+		for content, locations := range category.Items {
+			for i := range locations {
+				locations[i].FilePath = rename(locations[i].FilePath)
+			}
+			category.Items[content] = locations
+		}
+	}
+	for i := range c.apiEndpoints {
+		c.apiEndpoints[i].FilePath = rename(c.apiEndpoints[i].FilePath)
+	}
+
+	c.obfuscatedIndex = make(map[string]int, len(c.obfuscatedFiles))
+	for i := range c.obfuscatedFiles {
+		c.obfuscatedFiles[i].FilePath = rename(c.obfuscatedFiles[i].FilePath)
+		c.obfuscatedIndex[c.obfuscatedFiles[i].FilePath] = i
+	}
+}
+
 // GenerateReport 生成报告
 func (c *DataCollector) GenerateReport() *ScanReport {
 	c.mu.Lock()

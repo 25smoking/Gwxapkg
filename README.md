@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-2.7.2-blue.svg)
+![Version](https://img.shields.io/badge/version-2.7.3-blue.svg)
 ![Go Version](https://img.shields.io/badge/go-%3E%3D1.21-00ADD8.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey.svg)
@@ -62,6 +62,9 @@
 - **完整还原** - wxml/wxss/js/json/wxs 全部支持
 - **代码美化** - 自动格式化 JavaScript/CSS/HTML 代码
 - **默认反混淆** - JavaScript 默认执行静态还原 + 受控解码，优先展开常见字符串数组、`\xNN`、`\uNNNN`、十六进制字面量
+- **源码级语义还原** - 默认启用 AST `deep` 激进策略，把压缩变量/函数名恢复为更适合审计的 `params`、`requestData`、`response`、`event`、`app` 等语义名
+- **可追溯 AST 写回** - 生成 `ast_rename_map.json`、`ast_rename_diff.md`、`ast_rename.patch`，并保留写回前源码用于 `semantic -ast-rollback=true` 回滚
+- **API 语义视图** - 自动生成 `api_map`、API 调用链、审计伪代码，并支持将 Burp 原始请求关联到源码 API
 - **页面路由地图** - 自动生成页面清单、入口页、分包、TabBar、组件依赖、静态/动态跳转边、事件触发线索与页面接口映射
 - **目录结构** - 还原微信小程序原始工程目录
 - **资源提取** - 图片/音频/视频等资源文件完整提取
@@ -369,9 +372,9 @@ output/
 
 ---
 
-## 📈 性能对比（v2.7.2 vs v1.0）
+## 📈 性能对比（v2.7.3 vs v1.0）
 
-| 指标 | v1.0 | v2.7.2 | 改进 |
+| 指标 | v1.0 | v2.7.3 | 改进 |
 |------|------|--------|------|
 | **扫描速度** | 基准 | +50-70% | ⬆️⬆️⬆️ 规则预编译 |
 | **误报控制** | 基础正则直扫 | 多层过滤收敛 | ✅ 黑名单 + 上下文 + 占位符 + 弱值过滤 |  
@@ -383,6 +386,25 @@ output/
 ---
 
 ## 🔄 版本更新
+
+### v2.7.3 (2026-05-12) - 🧠 Semantic 与 AST 深度还原增强
+
+#### 🆕 新增功能
+- 新增 AST 变量/函数深度重命名，默认 `-ast-rename=deep`，对 high/medium 置信度的局部变量、函数参数和局部函数名进行源码级语义写回
+- 新增 `off/report/safe/deep` 四档 AST 策略，并在命令行运行时提示本次策略、可能改写范围、保护范围和回滚方式
+- 新增 `.gwxapkg/ast_rename_map.json`、`.gwxapkg/ast_rename_diff.md`、`.gwxapkg/ast_rename.patch`，保留 `.gwxapkg/pre_ast_sources` 以支持回滚
+- 新增 API 调用链产物 `.gwxapkg/api_call_chain.json` / `.gwxapkg/api_call_chain.md`
+- 新增 AST API 审计伪代码 `.gwxapkg/api_pseudo.md` 与 `.gwxapkg/pseudo_api/*.js`
+- 新增 `api-link` 子命令，支持从 Burp 原始请求文件或 stdin 自动关联到源码 API
+
+#### 🔧 改进
+- `scan`、`all`、默认解包命令和 `semantic -dir` 均支持 `-ast-rename`、`-ast-diff`、`-ast-patch`
+- AST 写回明确保护 `exports.xxx`、对象字段、字符串、注释、WXML handler 和 `wx/uni/getApp/require/module/exports` 等公开或全局标识
+- `semantic_module_map.json` 增加 AST 统计、API 调用链路径和 API 伪代码路径，便于审计追溯
+
+#### ✅ 验证
+- 已新增 AST 模式、置信度、diff/patch/rollback、API 调用链、伪代码和 Burp 请求关联回归测试
+- 已验证 `go test ./...`、`go build ./...`
 
 ### v2.7.2 (2026-04-30) - 🛡️ 稳定性与报告修复
 

@@ -32,7 +32,7 @@ func Banner() {
  ██║   ██║██║███╗██║ ██╔██╗ ██╔══██║██╔═══╝ ██╔═██╗ ██║   ██║
  ╚██████╔╝╚███╔███╔╝██╔╝ ██╗██║  ██║██║     ██║  ██╗╚██████╔╝
   ╚═════╝  ╚══╝╚══╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝  ╚═╝ ╚═════╝`)
-	dim.Println("              Wxapkg Decompiler Tool v2.7.2")
+	dim.Println("              Wxapkg Decompiler Tool v2.7.3")
 	fmt.Println()
 }
 
@@ -153,6 +153,8 @@ func PrintUsage() {
 	white.Println("  all --all                     处理所有已缓存的小程序")
 	white.Println("  all --all --verbose           扫描全部缓存并输出候选路径诊断")
 	white.Println("  scan-only -dir=<目录>          对已解包目录独立扫描并生成报告")
+	white.Println("  semantic -dir=<目录>           对已解包目录做源码语义反混淆")
+	white.Println("  api-link -dir=<目录>            将 Burp 原始请求关联到源码 API")
 	white.Println("  repack -in=<目录> -id=<AppID>  重新打包为客户端可用 wxapkg")
 	fmt.Println()
 	cyan.Println("直接使用:")
@@ -166,6 +168,9 @@ func PrintUsage() {
 	dim.Println("  -save        保存解密文件 (默认: false)")
 	dim.Println("  -sensitive   获取敏感数据 (默认: true)")
 	dim.Println("  -workspace   保留可精确回包的隐藏工作区 (默认: false)")
+	dim.Println("  -ast-rename  AST 还原策略: off / report / safe / deep (默认: deep，激进写回)")
+	dim.Println("  -ast-diff    生成 AST 重命名 diff 报告 (默认: true)")
+	dim.Println("  -ast-patch   生成 AST 重命名 patch (默认: true)")
 	dim.Println("  repack -id   生成加密包，适用于回写微信客户端")
 	dim.Println("  repack -raw  生成未加密包，仅供测试")
 	dim.Println("  scan-only -format  报告格式: excel / html / both (默认: both)")

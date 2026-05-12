@@ -1395,6 +1395,10 @@ func stringFromMap(data map[string]interface{}, key string) string {
 }
 
 func shouldIgnoreGeneratedArtifact(relPath string) bool {
+	if relPath == ".gwxapkg" || strings.HasPrefix(relPath, ".gwxapkg/") {
+		return true
+	}
+
 	name := path.Base(relPath)
 	switch name {
 	case "sensitive_report.html",

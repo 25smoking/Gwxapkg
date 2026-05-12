@@ -13,11 +13,16 @@ import (
 	packmeta "github.com/25smoking/Gwxapkg/internal/pack"
 	"github.com/25smoking/Gwxapkg/internal/reporter"
 	"github.com/25smoking/Gwxapkg/internal/restore"
+	"github.com/25smoking/Gwxapkg/internal/semantic"
 	"github.com/25smoking/Gwxapkg/internal/ui"
 	"github.com/25smoking/Gwxapkg/internal/util"
 )
 
 func Execute(appID, input, outputDir, fileExt string, restoreDir bool, pretty bool, noClean bool, save bool, sensitive bool, postman bool, workspace bool) {
+	ExecuteWithOptions(appID, input, outputDir, fileExt, restoreDir, pretty, noClean, save, sensitive, postman, workspace, semantic.DefaultRewriteOptions())
+}
+
+func ExecuteWithOptions(appID, input, outputDir, fileExt string, restoreDir bool, pretty bool, noClean bool, save bool, sensitive bool, postman bool, workspace bool, rewriteOptions semantic.RewriteOptions) {
 	// 确定输出目录
 	if outputDir == "" {
 		outputDir = DetermineOutputDir(input, appID)
@@ -106,6 +111,42 @@ func Execute(appID, input, outputDir, fileExt string, restoreDir bool, pretty bo
 	ui.Step(2, 2, "还原工程结构...")
 	restore.ProjectStructure(outputDir, restoreDir)
 
+	if restoreDir {
+		printASTRenameNotice(rewriteOptions.ASTRename)
+		semanticReport, err := semantic.RewriteProjectWithOptions(outputDir, rewriteOptions)
+		if err != nil {
+			ui.Warning("源码级语义反混淆失败: %v", err)
+		} else {
+			if collector := key.GetCollector(); collector != nil {
+				collector.RewriteFilePaths(semanticReport.PathMap)
+			}
+			if semanticReport.RenamedCount > 0 || semanticReport.SourceMapRecovered > 0 {
+				ui.Success("源码语义映射: %s", filepath.Join(outputDir, ".gwxapkg", "semantic_module_map.json"))
+				ui.Info("   - 语义重命名: %d | require 重写: %d | SourceMap 源码: %d",
+					semanticReport.RenamedCount,
+					semanticReport.RewrittenRequireCount,
+					semanticReport.SourceMapRecovered,
+				)
+			}
+			if semanticReport.APIEndpointCount > 0 {
+				ui.Success("API 地图: %s", filepath.Join(outputDir, ".gwxapkg", "api_map.md"))
+				ui.Info("   - API 函数: %d | 细拆模块: %d",
+					semanticReport.APIEndpointCount,
+					semanticReport.APISplitCount,
+				)
+				ui.Success("API 调用链: %s", filepath.Join(outputDir, ".gwxapkg", "api_call_chain.md"))
+				ui.Success("API 伪代码: %s", filepath.Join(outputDir, ".gwxapkg", "api_pseudo.md"))
+			}
+			if semanticReport.ASTRenamedCount > 0 {
+				ui.Success("AST 重命名报告: %s", filepath.Join(outputDir, ".gwxapkg", "ast_rename_map.json"))
+				ui.Info("   - AST 重命名: %d | 文件数: %d",
+					semanticReport.ASTRenamedCount,
+					semanticReport.ASTRenamedFiles,
+				)
+			}
+		}
+	}
+
 	// 输出结果目录
 	fmt.Println()
 	ui.Success("输出目录: %s", filepath.Clean(outputDir))
@@ -181,5 +222,16 @@ func Execute(appID, input, outputDir, fileExt string, restoreDir bool, pretty bo
 			routeManifest.Summary.SharedRouterHelperCount,
 			routeManifest.Summary.TabBarPages,
 		)
+	}
+}
+
+func printASTRenameNotice(options semantic.ASTRenameOptions) {
+	lines := semantic.ASTRenameNoticeLines(options)
+	if len(lines) == 0 {
+		return
+	}
+	ui.Warning(lines[0])
+	for _, line := range lines[1:] {
+		ui.Info("   - %s", line)
 	}
 }
